@@ -3,15 +3,16 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
+	"time"
 )
 
 var (
-	Opcodes    [123]uint16
-	RegistersX [8]uint16
-	PC         uint16
-	RegisterI  uint16
-	Memory     [3584]byte
+	Registers [16]uint16
+	PC        uint16
+	RegisterI uint16
+	Memory    [4096]byte
 )
 
 func main() {
@@ -27,10 +28,12 @@ func main() {
 }
 
 func Run() {
-	PC = 0
+	PC = 0x200
 
 	for {
-		// RunOpcode[PC]
+		opcode := (uint16(Memory[PC]) << 8) | uint16(Memory[PC+1])
+		RunOpcode(opcode)
+		time.Sleep(time.Second * 1)
 	}
 }
 
@@ -39,6 +42,7 @@ func LoadOpcodes() {
 
 	if err != nil {
 		fmt.Println("Could not load ROM.")
+		os.Exit(-1)
 	}
 
 	fmt.Printf("ROM is %d bytes\n", len(data))
@@ -48,13 +52,16 @@ func LoadOpcodes() {
 			fmt.Println()
 		}
 		opcode := (uint16(data[i]) << 8) | uint16(data[i+1])
-		Opcodes[i/2] = opcode
+
+		Memory[i+512] = data[i]
+		Memory[i+1+512] = data[i+1]
 
 		fmt.Printf("%x ", opcode)
 	}
 }
 
 func RunOpcode(opcode uint16) {
+	fmt.Printf("Opcode: %x\n\n", opcode)
 	switch opcode & 0xf000 {
 	case 0x1000:
 		switch opcode {
@@ -68,18 +75,18 @@ func RunOpcode(opcode uint16) {
 	case 0x2000:
 		CallSubroutine(opcode & 0x0fff)
 	case 0x3000:
-		SkipIfEqual(opcode&0x0f00, opcode&0x00ff)
+		SkipIfEqual(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0x4000:
-		SkipIfNotEqual(opcode&0x0f00, opcode&0x00ff)
+		SkipIfNotEqual(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0x5000:
-		SkipIfVXEqualV(opcode&0x0f00, opcode&0x00f0)
+		SkipIfVXEqualV(opcode&0x0f00>>8, opcode&0x00f0>>4)
 	case 0x6000:
-		SetVX(opcode&0x0f00, opcode&0x00ff)
+		SetVX(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0x7000:
 		AddVX(opcode&0x0f00, opcode&0x00ff)
 	case 0x8000:
-		registerX := opcode & 0x0f00
-		registerY := opcode & 0x00f0
+		registerX := opcode & 0x0f00 >> 8
+		registerY := opcode & 0x00f0 >> 4
 
 		switch opcode & 0x0001 {
 		case 0x0001:
@@ -106,11 +113,11 @@ func RunOpcode(opcode uint16) {
 	case 0xb000:
 		JumpToAddrPlusV0(opcode & 0x0fff)
 	case 0xc000:
-		SetVXRandomAndVal(opcode & 0x0fff)
+		SetVXRandomAndVal(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0xd000:
-		Draw(opcode&0x0f00, opcode&0x00f0, opcode&0x000f)
+		Draw(opcode&0x0f00>>8, opcode&0x00f0>>4, opcode&0x000f)
 	case 0xe000:
-		registerX := opcode & 0x0f00
+		registerX := opcode & 0x0f00 >> 8
 		switch opcode & 0x00ff {
 		case 0x0007:
 			SkipIfVXPressed(registerX)
@@ -118,7 +125,7 @@ func RunOpcode(opcode uint16) {
 			SkipIfVXUnpressed(registerX)
 		}
 	case 0xf000:
-		registerX := opcode & 0x0f00
+		registerX := opcode & 0x0f00 >> 8
 		switch opcode & 0x00ff {
 		case 0x0015:
 			SetDelayTimerToVX(registerX)
@@ -155,127 +162,137 @@ func DisplayClear() { // 00E0
 }
 
 // Returns from a subroutine.
-
 func SubReturn() { // 00EE
 
 }
 
-// Jumps to address NNN.
-
+// Jumps to address
 func Goto(addr uint16) { // 1NNN
-
+	PC = addr
 }
 
-// Calls subroutine at NNN.
-
+// Calls subroutine at
 func CallSubroutine(addr uint16) { // 2NNN
 
 }
 
 // Skips the next instruction if VX equals NN. (Usually the next instruction is a jump to skip a code block)
-
-func SkipIfEqual(registerX, addr uint16) { //3XNN
-
+func SkipIfEqual(registerX, value uint16) { //3XNN
+	if Registers[registerX] == value {
+		PC += 4
+	} else {
+		PC += 2
+	}
 }
 
 // Skips the next instruction if VX doesn't equal NN. (Usually the next instruction is a jump to skip a code block)
-
-func SkipIfNotEqual(registerX, addr uint16) { // 4XNN
-
+func SkipIfNotEqual(registerX, value uint16) { // 4XNN
+	if Registers[registerX] != value {
+		PC += 4
+	} else {
+		PC += 2
+	}
 }
 
 // Skips the next instruction if VX equals VY. (Usually the next instruction is a jump to skip a code block)
-
 func SkipIfVXEqualV(registerX, registerY uint16) { // 5XNN
-
+	if Registers[registerX] == Registers[registerY] {
+		PC += 4
+	} else {
+		PC += 2
+	}
 }
 
 // Sets VX to NN.
-
 func SetVX(registerX, value uint16) { // 6XNN
-
+	Registers[registerX] = value
+	PC += 2
 }
 
 // Adds NN to VX.
-
 func AddVX(registerX, value uint16) { // 7XNN
-
+	Registers[registerX] += value
+	PC += 2
 }
 
 // Sets VX to the value of VY.
-
 func SetVXToY(registerX, registerY uint16) { // 8XY0
-
+	Registers[registerX] = Registers[registerY]
+	PC += 2
 }
 
 // Sets VX to VX or VY. (Bitwise OR operation)
-
 func SetVXToXorY(registerX, registerY uint16) { // 8XY1
-
+	Registers[registerX] |= Registers[registerY]
+	PC += 2
 }
 
 // Sets VX to VX and VY. (Bitwise AND operation)
-
 func SetVXToXandY(registerX, registerY uint16) { // 8XY2
-
+	Registers[registerX] &= Registers[registerY]
+	PC += 2
 }
 
 // Sets VX to VX xor VY.
-
 func SetVXToXxorY(registerX, registerY uint16) { // 8XY3
-
+	Registers[registerX] ^= Registers[registerY]
+	PC += 2
 }
 
 // Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.
-
 func AddVYToVX(registerX, registerY uint16) { // 8XY4
-
+	Registers[registerX] += Registers[registerY]
+	PC += 2
 }
 
 // VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
-
 func SubstractVYFromVX(registerX, registerY uint16) { //8XY5
-
+	Registers[registerX] -= Registers[registerY]
+	PC += 2
 }
 
 // Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift.[2]
-
 func ShiftRightVX(registerX uint16) { // 8XY6
-
+	Registers[registerX] = Registers[registerX] >> 1
+	PC += 2
 }
 
 // Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
-
 func SetVXToVYMinusVX(registerX, registerY uint16) { // 8XY7
-
+	Registers[registerX] = Registers[registerY] - Registers[registerY]
+	PC += 2
 }
 
 // Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift.[2]
-
 func ShiftLeftVX(registerX uint16) { // 8XYE
-
+	Registers[registerX] = Registers[registerX] << 1
+	PC += 2
 }
 
 // Skips the next instruction if VX doesn't equal VY. (Usually the next instruction is a jump to skip a code block)
-
 func SkipIfVXNotEqualVY(registerX, registerY uint16) { // 9XY0
-
+	if Registers[registerX] != Registers[registerY] {
+		PC += 4
+	} else {
+		PC += 2
+	}
 }
 
 // Sets I to the address NNN.
-
 func SetIToAddr(addr uint16) { // ANNN
-
+	RegisterI = addr
+	PC += 2
 }
 
 // Jumps to the address NNN plus V0.
 func JumpToAddrPlusV0(addr uint16) { // BNNN
-
+	PC = addr + Registers[0]
 }
 
-// Sets VX to the result of a bitwise and operation on a random number (Typically: 0 to 255) and
-func SetVXRandomAndVal(value uint16) { // CXNN
-
+// Sets VX to the result of a bitwise and operation on a random number (Typically: 0 to 255) and NN
+func SetVXRandomAndVal(registerX, value uint16) { // CXNN
+	Registers[registerX] = uint16(rand.Int()%255) & value
+	PC += 2
 }
 
 // Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
@@ -317,7 +334,8 @@ func SetSoundTimerToVX(registerX uint16) { // FX18
 
 // Adds VX to I.
 func AddVXTOI(registerX uint16) { // FX1E
-
+	RegisterI += Registers[registerX]
+	PC += 2
 }
 
 // Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
@@ -333,10 +351,16 @@ func SetBCD(registerX uint16) { // FX33
 
 // Stores V0 to VX (including VX) in memory starting at address I.
 func RegDump(registerX uint16) { // FX55
-
+	for i := uint16(0); i < registerX; i++ {
+		register := Registers[i]
+		Memory[RegisterI+i] = byte(Register[i] & 0xff00 >> 8)
+		Memory[RegisterI+i+1] = byte(Registers[i] & 0x00ff)
+	}
 }
 
 // Fills V0 to VX (including VX) with values from memory starting at address I.
 func RegLoad(registerX uint16) { // FX65
-
+	for i := 0; i < registerX; i++ {
+		Registers[i] = Memory[RegisterI+i]
+	}
 }
