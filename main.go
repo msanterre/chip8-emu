@@ -3,16 +3,28 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"os"
 	"time"
 )
 
+const (
+	PROG_POS uint16 = 0x200
+)
+
 var (
-	Registers [16]uint16
-	PC        uint16
-	RegisterI uint16
-	Memory    [4096]byte
+	Registers  [16]uint16
+	RegisterI  uint16
+	PC         uint16
+	SP         byte
+	Stack      [16]uint16
+	Memory     [4096]byte
+	DelayTimer byte
+	SoundTimer byte
+	Sprites    = [16]int{0xf0909090f0, 0x2060202070, 0xf010f080f0, 0xf010f010f0, 0x9090f01010,
+		0xf080f010f0, 0xf080f090f0, 0xf010204040, 0xf090f090f0, 0xf090f010f0, 0xf090f09090,
+		0xe090e090e0, 0xf0808080f0, 0xe0909090e0, 0xf080f080f0, 0xf080f08080}
 )
 
 func main() {
@@ -23,12 +35,13 @@ func main() {
 
 	fmt.Printf("\n\nStart Execution:\n\n")
 
-	LoadOpcodes()
+	LoadSprites()
+	LoadROM()
 	Run()
 }
 
 func Run() {
-	PC = 0x200
+	PC = PROG_POS
 
 	for {
 		opcode := (uint16(Memory[PC]) << 8) | uint16(Memory[PC+1])
@@ -37,7 +50,20 @@ func Run() {
 	}
 }
 
-func LoadOpcodes() {
+func LoadSprites() {
+	for i := 0; i < len(Sprites); i++ {
+		memIndex := i * 5
+		sprite := Sprites[i]
+
+		Memory[memIndex] = byte(sprite & 0xff00000000 >> 32)
+		Memory[memIndex+2] = byte(sprite & 0x00ff000000 >> 24)
+		Memory[memIndex+4] = byte(sprite & 0x0000ff0000 >> 16)
+		Memory[memIndex+6] = byte(sprite & 0x000000ff00 >> 8)
+		Memory[memIndex+8] = byte(sprite & 0x00000000ff)
+	}
+}
+
+func LoadROM() {
 	data, err := ioutil.ReadFile(os.Args[1])
 
 	if err != nil {
@@ -47,14 +73,14 @@ func LoadOpcodes() {
 
 	fmt.Printf("ROM is %d bytes\n", len(data))
 
-	for i := 0; i < len(data); i += 2 {
+	for i := uint16(0); i < uint16(len(data)); i += 2 {
 		if i%16 == 0 {
 			fmt.Println()
 		}
 		opcode := (uint16(data[i]) << 8) | uint16(data[i+1])
 
-		Memory[i+512] = data[i]
-		Memory[i+1+512] = data[i+1]
+		Memory[i+PROG_POS] = data[i]
+		Memory[i+1+PROG_POS] = data[i+1]
 
 		fmt.Printf("%x ", opcode)
 	}
@@ -83,11 +109,10 @@ func RunOpcode(opcode uint16) {
 	case 0x6000:
 		SetVX(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0x7000:
-		AddVX(opcode&0x0f00, opcode&0x00ff)
+		AddVX(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0x8000:
 		registerX := opcode & 0x0f00 >> 8
 		registerY := opcode & 0x00f0 >> 4
-
 		switch opcode & 0x0001 {
 		case 0x0001:
 			SetVXToY(registerX, registerY)
@@ -107,7 +132,7 @@ func RunOpcode(opcode uint16) {
 			ShiftLeftVX(registerX)
 		}
 	case 0x9000:
-		SkipIfVXNotEqualVY(opcode&0x0f00, opcode&0x00f0)
+		SkipIfVXNotEqualVY(opcode&0x0f00>>8, opcode&0x00f0>>4)
 	case 0xa000:
 		SetIToAddr(opcode & 0x0fff)
 	case 0xb000:
@@ -152,7 +177,7 @@ func RunOpcode(opcode uint16) {
 // Calls RCA 1802 program at address NNN. Not necessary for most ROMs.
 
 func CallRcaProgram(addr uint16) { // 0NNN
-
+	log.Fatal("Call RCA Program called")
 }
 
 // Clears the screen.
@@ -163,7 +188,8 @@ func DisplayClear() { // 00E0
 
 // Returns from a subroutine.
 func SubReturn() { // 00EE
-
+	PC = Stack[SP]
+	SP -= 1
 }
 
 // Jumps to address
@@ -173,7 +199,9 @@ func Goto(addr uint16) { // 1NNN
 
 // Calls subroutine at
 func CallSubroutine(addr uint16) { // 2NNN
-
+	SP += 1
+	Stack[SP] = PC
+	PC = addr
 }
 
 // Skips the next instruction if VX equals NN. (Usually the next instruction is a jump to skip a code block)
@@ -242,18 +270,38 @@ func SetVXToXxorY(registerX, registerY uint16) { // 8XY3
 // Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.
 func AddVYToVX(registerX, registerY uint16) { // 8XY4
 	Registers[registerX] += Registers[registerY]
+
+	if Registers[registerX] > 255 {
+		Registers[15] = 1
+		Registers[registerX] &= 0x00ff
+	} else {
+		RegisterI[15] = 0
+	}
+
 	PC += 2
 }
 
 // VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
 func SubstractVYFromVX(registerX, registerY uint16) { //8XY5
-	Registers[registerX] -= Registers[registerY]
+	if Registers[registerX] < Registers[registerY] {
+		Registers[registerX] = Registers[registerY] - Registers[registerX]
+		Registers[15] = 1
+	} else {
+		Registers[registerX] = Registers[registerX] - Registers[registerY]
+		RegisterI[15] = 0
+	}
+
 	PC += 2
 }
 
 // Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift.[2]
 func ShiftRightVX(registerX uint16) { // 8XY6
-	Registers[registerX] = Registers[registerX] >> 1
+	if Registers[register]&0x000f == 0x0001 {
+		Registers[15] = 1
+	} else {
+		Registers[15] = 0
+	}
+	Registers[registerX] /= 2
 	PC += 2
 }
 
@@ -299,7 +347,8 @@ func SetVXRandomAndVal(registerX, value uint16) { // CXNN
 // Each row of 8 pixels is read as bit-coded starting from memory location I; I value doesn’t change after the execution of this instruction.
 // As described above, VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that doesn’t happen
 func Draw(registerX, registerY, val uint16) { // DXYN
-
+	//TODO: Draw
+	PC += 2
 }
 
 // Skips the next instruction if the key stored in VX is pressed. (Usually the next instruction is a jump to skip a code block)
@@ -351,16 +400,16 @@ func SetBCD(registerX uint16) { // FX33
 
 // Stores V0 to VX (including VX) in memory starting at address I.
 func RegDump(registerX uint16) { // FX55
-	for i := uint16(0); i < registerX; i++ {
-		register := Registers[i]
-		Memory[RegisterI+i] = byte(Register[i] & 0xff00 >> 8)
-		Memory[RegisterI+i+1] = byte(Registers[i] & 0x00ff)
+	for i := uint16(0); i <= registerX; i += 2 {
+		register := Registers[i/2]
+		Memory[RegisterI+i] = byte(register & 0xff00 >> 8)
+		Memory[RegisterI+i+1] = byte(register & 0x00ff)
 	}
 }
 
 // Fills V0 to VX (including VX) with values from memory starting at address I.
 func RegLoad(registerX uint16) { // FX65
-	for i := 0; i < registerX; i++ {
-		Registers[i] = Memory[RegisterI+i]
+	for i := uint16(0); i <= registerX; i += 2 {
+		Registers[i/2] = uint16(Registers[RegisterI+i]&0xff00<<8) | uint16(Registers[RegisterI+i]&0x00ff)
 	}
 }
