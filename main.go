@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"os"
 	"time"
+
+	"github.com/veandco/go-sdl2/sdl"
 )
 
 const (
@@ -14,6 +16,7 @@ const (
 )
 
 var (
+	Surface    *sdl.Surface
 	Registers  [16]uint16
 	RegisterI  uint16
 	PC         uint16
@@ -37,6 +40,25 @@ func main() {
 
 	LoadSprites()
 	LoadROM()
+
+	// Initiate the drawing surface
+	sdl.Init(sdl.INIT_EVERYTHING)
+
+	window, err := sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, 800, 600, sdl.WINDOW_SHOWN)
+	if err != nil {
+		panic(err)
+	}
+	defer window.Destroy()
+
+	Surface, err = window.GetSurface()
+	if err != nil {
+		panic(err)
+	}
+
+	rect := sdl.Rect{0, 0, 800, 600}
+	Surface.FillRect(&rect, 0x0)
+	window.UpdateSurface()
+
 	Run()
 }
 
@@ -84,6 +106,7 @@ func LoadROM() {
 
 		fmt.Printf("%x ", opcode)
 	}
+	fmt.Printf("\n\n")
 }
 
 func RunOpcode(opcode uint16) {
@@ -275,7 +298,7 @@ func AddVYToVX(registerX, registerY uint16) { // 8XY4
 		Registers[15] = 1
 		Registers[registerX] &= 0x00ff
 	} else {
-		RegisterI[15] = 0
+		Registers[15] = 0
 	}
 
 	PC += 2
@@ -288,7 +311,7 @@ func SubstractVYFromVX(registerX, registerY uint16) { //8XY5
 		Registers[15] = 1
 	} else {
 		Registers[registerX] = Registers[registerX] - Registers[registerY]
-		RegisterI[15] = 0
+		Registers[15] = 0
 	}
 
 	PC += 2
@@ -296,7 +319,7 @@ func SubstractVYFromVX(registerX, registerY uint16) { //8XY5
 
 // Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift.[2]
 func ShiftRightVX(registerX uint16) { // 8XY6
-	if Registers[register]&0x000f == 0x0001 {
+	if Registers[registerX]&0x000f == 0x0001 {
 		Registers[15] = 1
 	} else {
 		Registers[15] = 0
@@ -347,7 +370,7 @@ func SetVXRandomAndVal(registerX, value uint16) { // CXNN
 // Each row of 8 pixels is read as bit-coded starting from memory location I; I value doesn’t change after the execution of this instruction.
 // As described above, VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that doesn’t happen
 func Draw(registerX, registerY, val uint16) { // DXYN
-	//TODO: Draw
+
 	PC += 2
 }
 
