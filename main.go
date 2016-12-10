@@ -12,19 +12,23 @@ import (
 )
 
 const (
-	PROG_POS uint16 = 0x200
+	PROGRAM_POS uint16 = 0x200
 )
 
 var (
 	Surface    *sdl.Surface
+	Window     *sdl.Window
 	Registers  [16]uint16
 	RegisterI  uint16
 	PC         uint16
 	SP         byte
 	Stack      [16]uint16
 	Memory     [4096]byte
+	GFX        [32]uint64
 	DelayTimer byte
 	SoundTimer byte
+	GfxFlag    bool
+	SoundFlag  bool
 	Sprites    = [16]int{0xf0909090f0, 0x2060202070, 0xf010f080f0, 0xf010f010f0, 0x9090f01010,
 		0xf080f010f0, 0xf080f090f0, 0xf010204040, 0xf090f090f0, 0xf090f010f0, 0xf090f09090,
 		0xe090e090e0, 0xf0808080f0, 0xe0909090e0, 0xf080f080f0, 0xf080f08080}
@@ -44,32 +48,45 @@ func main() {
 	// Initiate the drawing surface
 	sdl.Init(sdl.INIT_EVERYTHING)
 
-	window, err := sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, 800, 600, sdl.WINDOW_SHOWN)
+	Window, err := sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, 640, 320, sdl.WINDOW_SHOWN)
 	if err != nil {
 		panic(err)
 	}
-	defer window.Destroy()
+	defer Window.Destroy()
 
-	Surface, err = window.GetSurface()
+	Surface, err = Window.GetSurface()
 	if err != nil {
 		panic(err)
 	}
 
-	rect := sdl.Rect{0, 0, 800, 600}
-	Surface.FillRect(&rect, 0x0)
-	window.UpdateSurface()
+	ClearScreen()
+	Window.UpdateSurface()
 
 	Run()
 }
 
 func Run() {
-	PC = PROG_POS
+	PC = PROGRAM_POS
 
 	for {
 		opcode := (uint16(Memory[PC]) << 8) | uint16(Memory[PC+1])
 		RunOpcode(opcode)
+		if GfxFlag {
+			DrawScreen()
+			Window.UpdateSurface()
+			GfxFlag = false
+		}
 		time.Sleep(time.Second * 1)
 	}
+}
+
+func ClearScreen() {
+	rect := sdl.Rect{0, 0, 800, 600}
+	Surface.FillRect(&rect, 0x0)
+}
+
+func DrawScreen() {
+	// TODO: Draw pixels on screen
 }
 
 func LoadSprites() {
@@ -82,6 +99,16 @@ func LoadSprites() {
 		Memory[memIndex+4] = byte(sprite & 0x0000ff0000 >> 16)
 		Memory[memIndex+6] = byte(sprite & 0x000000ff00 >> 8)
 		Memory[memIndex+8] = byte(sprite & 0x00000000ff)
+	}
+}
+
+func UpdateTimers() {
+	if DelayTimer > 0 {
+		DelayTimer--
+	}
+
+	if SoundTimer > 0 {
+		SoundTimer--
 	}
 }
 
@@ -101,8 +128,8 @@ func LoadROM() {
 		}
 		opcode := (uint16(data[i]) << 8) | uint16(data[i+1])
 
-		Memory[i+PROG_POS] = data[i]
-		Memory[i+1+PROG_POS] = data[i+1]
+		Memory[i+PROGRAM_POS] = data[i]
+		Memory[i+1+PROGRAM_POS] = data[i+1]
 
 		fmt.Printf("%x ", opcode)
 	}
@@ -206,6 +233,7 @@ func CallRcaProgram(addr uint16) { // 0NNN
 // Clears the screen.
 
 func DisplayClear() { // 00E0
+	ClearScreen()
 
 }
 
@@ -295,10 +323,10 @@ func AddVYToVX(registerX, registerY uint16) { // 8XY4
 	Registers[registerX] += Registers[registerY]
 
 	if Registers[registerX] > 255 {
-		Registers[15] = 1
+		Registers[0xf] = 1
 		Registers[registerX] &= 0x00ff
 	} else {
-		Registers[15] = 0
+		Registers[0xf] = 0
 	}
 
 	PC += 2
@@ -308,10 +336,10 @@ func AddVYToVX(registerX, registerY uint16) { // 8XY4
 func SubstractVYFromVX(registerX, registerY uint16) { //8XY5
 	if Registers[registerX] < Registers[registerY] {
 		Registers[registerX] = Registers[registerY] - Registers[registerX]
-		Registers[15] = 1
+		Registers[0xf] = 1
 	} else {
 		Registers[registerX] = Registers[registerX] - Registers[registerY]
-		Registers[15] = 0
+		Registers[0xf] = 0
 	}
 
 	PC += 2
@@ -320,9 +348,9 @@ func SubstractVYFromVX(registerX, registerY uint16) { //8XY5
 // Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift.[2]
 func ShiftRightVX(registerX uint16) { // 8XY6
 	if Registers[registerX]&0x000f == 0x0001 {
-		Registers[15] = 1
+		Registers[0xf] = 1
 	} else {
-		Registers[15] = 0
+		Registers[0xf] = 0
 	}
 	Registers[registerX] /= 2
 	PC += 2
@@ -369,8 +397,21 @@ func SetVXRandomAndVal(registerX, value uint16) { // CXNN
 // Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
 // Each row of 8 pixels is read as bit-coded starting from memory location I; I value doesn’t change after the execution of this instruction.
 // As described above, VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that doesn’t happen
-func Draw(registerX, registerY, val uint16) { // DXYN
+func Draw(x, y, height uint16) { // DXYN
+	var pixel byte
 
+	Registers[0xf] = 0
+	for i := uint16(0); i < height; i++ {
+		pixel = Memory[RegisterI+i]
+
+		for j := uint16(0); j < 8; j++ {
+			if pixel&(0x80>>i) != 0 {
+
+			}
+		}
+	}
+
+	GfxFlag = true
 	PC += 2
 }
 
@@ -386,7 +427,8 @@ func SkipIfVXUnpressed(registerX uint16) { // EXA1
 
 // Sets VX to the value of the delay timer.
 func SetVXToDelayTimer(registerX uint16) { // FX07
-
+	Registers[registerX] = uint16(DelayTimer)
+	PC += 2
 }
 
 // A key press is awaited, and then stored in VX. (Blocking Operation. All instruction halted until next key event)
@@ -396,12 +438,14 @@ func WaitAndSetKeypressToVX(registerX uint16) { // FX0A
 
 // Sets the delay timer to VX.
 func SetDelayTimerToVX(registerX uint16) { // FX15
-
+	DelayTimer = byte(Registers[registerX])
+	PC += 2
 }
 
 // Sets the sound timer to VX.
 func SetSoundTimerToVX(registerX uint16) { // FX18
-
+	SoundTimer = byte(Registers[registerX])
+	PC += 2
 }
 
 // Adds VX to I.
