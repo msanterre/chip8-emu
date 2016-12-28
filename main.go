@@ -6,13 +6,16 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
 
 const (
-	PROGRAM_POS uint16 = 0x200
+	PROGRAM_POS    uint16 = 0x200
+	SCREEN_WIDTH   uint16 = 64
+	SCREEN_HEIGHT  uint16 = 32
+	DISPLAY_WIDTH  int    = 640
+	DISPLAY_HEIGHT int    = 320
 )
 
 var (
@@ -24,17 +27,33 @@ var (
 	SP         byte
 	Stack      [16]uint16
 	Memory     [4096]byte
-	GFX        [32]uint64
+	GFX        [SCREEN_HEIGHT * SCREEN_WIDTH]byte
 	DelayTimer byte
 	SoundTimer byte
 	GfxFlag    bool
 	SoundFlag  bool
-	Sprites    = [16]int{0xf0909090f0, 0x2060202070, 0xf010f080f0, 0xf010f010f0, 0x9090f01010,
-		0xf080f010f0, 0xf080f090f0, 0xf010204040, 0xf090f090f0, 0xf090f010f0, 0xf090f09090,
-		0xe090e090e0, 0xf0808080f0, 0xe0909090e0, 0xf080f080f0, 0xf080f08080}
+	Sprites    = [80]byte{
+		0xf0, 0x90, 0x90, 0x90, 0xf0, // 0
+		0x20, 0x60, 0x20, 0x20, 0x07, // 1
+		0xf0, 0x10, 0xf0, 0x80, 0xf0, // 2
+		0xf0, 0x10, 0xf0, 0x10, 0xf0, // 3
+		0x90, 0x90, 0xf0, 0x10, 0x10, // 4
+		0xf0, 0x80, 0xf0, 0x10, 0xf0, // 5
+		0xf0, 0x80, 0xf0, 0x90, 0xf0, // 6
+		0xf0, 0x10, 0x20, 0x40, 0x40, // 7
+		0xf0, 0x90, 0xf0, 0x90, 0xf0, // 8
+		0xf0, 0x90, 0xf0, 0x10, 0xf0, // 9
+		0xf0, 0x90, 0xf0, 0x90, 0x90, // A
+		0xe0, 0x90, 0xe0, 0x90, 0xe0, // B
+		0xf0, 0x80, 0x80, 0x80, 0xf0, // C
+		0xe0, 0x90, 0x90, 0x90, 0xe0, // D
+		0xf0, 0x80, 0xf0, 0x80, 0xf0, // E
+		0xf0, 0x80, 0xf0, 0x80, 0x80} // F
 )
 
 func main() {
+	var err error
+
 	if len(os.Args) != 2 {
 		fmt.Println("Usage: chip8 <path_to_rom>")
 		return
@@ -48,7 +67,7 @@ func main() {
 	// Initiate the drawing surface
 	sdl.Init(sdl.INIT_EVERYTHING)
 
-	Window, err := sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, 640, 320, sdl.WINDOW_SHOWN)
+	Window, err = sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, DISPLAY_WIDTH, DISPLAY_HEIGHT, sdl.WINDOW_SHOWN)
 	if err != nil {
 		panic(err)
 	}
@@ -76,29 +95,40 @@ func Run() {
 			Window.UpdateSurface()
 			GfxFlag = false
 		}
-		time.Sleep(time.Second * 1)
+		sdl.Delay(300)
 	}
 }
 
 func ClearScreen() {
-	rect := sdl.Rect{0, 0, 800, 600}
-	Surface.FillRect(&rect, 0x0)
+	rect := sdl.Rect{0, 0, int32(DISPLAY_WIDTH), int32(DISPLAY_HEIGHT)}
+	// Clear GFX values
+	for i := range GFX {
+		GFX[i] = 0
+	}
+	Surface.FillRect(&rect, 0)
 }
 
 func DrawScreen() {
-	// TODO: Draw pixels on screen
+	pixelWidth := int32(DISPLAY_WIDTH / int(SCREEN_WIDTH))
+	pixelHeight := int32(DISPLAY_HEIGHT / int(SCREEN_HEIGHT))
+
+	for y := uint16(0); y < SCREEN_HEIGHT; y++ {
+		for x := uint16(0); x < SCREEN_WIDTH; x++ {
+			position := y*SCREEN_WIDTH + x
+			pixel := GFX[position]
+
+			if pixel == 1 {
+				// fmt.Printf("x:%d\ny:%d\n\n", x, y)
+				rect := sdl.Rect{int32(x) * pixelWidth, int32(y) * pixelHeight, pixelWidth, pixelHeight}
+				Surface.FillRect(&rect, 0xffffffff)
+			}
+		}
+	}
 }
 
 func LoadSprites() {
 	for i := 0; i < len(Sprites); i++ {
-		memIndex := i * 5
-		sprite := Sprites[i]
-
-		Memory[memIndex] = byte(sprite & 0xff00000000 >> 32)
-		Memory[memIndex+2] = byte(sprite & 0x00ff000000 >> 24)
-		Memory[memIndex+4] = byte(sprite & 0x0000ff0000 >> 16)
-		Memory[memIndex+6] = byte(sprite & 0x000000ff00 >> 8)
-		Memory[memIndex+8] = byte(sprite & 0x00000000ff)
+		Memory[i] = Sprites[i]
 	}
 }
 
@@ -139,15 +169,17 @@ func LoadROM() {
 func RunOpcode(opcode uint16) {
 	fmt.Printf("Opcode: %x\n\n", opcode)
 	switch opcode & 0xf000 {
-	case 0x1000:
+	case 0x0000:
 		switch opcode {
 		case 0x00e0:
 			DisplayClear()
-		case 0x0ee0:
+		case 0x00ee:
 			SubReturn()
 		default:
 			CallRcaProgram(opcode)
 		}
+	case 0x1000:
+		Jump(opcode & 0x0fff)
 	case 0x2000:
 		CallSubroutine(opcode & 0x0fff)
 	case 0x3000:
@@ -202,6 +234,10 @@ func RunOpcode(opcode uint16) {
 	case 0xf000:
 		registerX := opcode & 0x0f00 >> 8
 		switch opcode & 0x00ff {
+		case 0x0007:
+			SetVXToDelayTimer(registerX)
+		case 0x000a:
+			WaitAndSetKeypressToVX(registerX)
 		case 0x0015:
 			SetDelayTimerToVX(registerX)
 		case 0x0018:
@@ -234,17 +270,17 @@ func CallRcaProgram(addr uint16) { // 0NNN
 
 func DisplayClear() { // 00E0
 	ClearScreen()
-
 }
 
 // Returns from a subroutine.
 func SubReturn() { // 00EE
 	PC = Stack[SP]
 	SP -= 1
+	PC += 2
 }
 
 // Jumps to address
-func Goto(addr uint16) { // 1NNN
+func Jump(addr uint16) { // 1NNN
 	PC = addr
 }
 
@@ -397,16 +433,27 @@ func SetVXRandomAndVal(registerX, value uint16) { // CXNN
 // Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
 // Each row of 8 pixels is read as bit-coded starting from memory location I; I value doesn’t change after the execution of this instruction.
 // As described above, VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that doesn’t happen
-func Draw(x, y, height uint16) { // DXYN
+func Draw(vx, vy, height uint16) { // DXYN
 	var pixel byte
 
+	x := Registers[vx]
+	y := Registers[vy]
+
 	Registers[0xf] = 0
-	for i := uint16(0); i < height; i++ {
-		pixel = Memory[RegisterI+i]
+	for yline := uint16(0); yline < height && yline+y < SCREEN_HEIGHT; yline++ {
+		pixel = Memory[RegisterI+yline]
 
-		for j := uint16(0); j < 8; j++ {
-			if pixel&(0x80>>i) != 0 {
+		for xline := uint16(0); xline < 8; xline++ {
+			if pixel&(0x80>>xline) != 0 {
+				offset := (x + xline + ((y + yline) * SCREEN_WIDTH))
 
+				if GFX[offset] == 1 {
+					// VF is set to 1 if any screen pixels are flipped from
+					// set to unset when the sprite is drawn, and to 0 if
+					// that doesn't happen.
+					Registers[0xF] = 1
+				}
+				GFX[offset] ^= 1
 			}
 		}
 	}
@@ -417,12 +464,12 @@ func Draw(x, y, height uint16) { // DXYN
 
 // Skips the next instruction if the key stored in VX is pressed. (Usually the next instruction is a jump to skip a code block)
 func SkipIfVXPressed(registerX uint16) { // EX9N
-
+	PC += 2
 }
 
 // Skips the next instruction if the key stored in VX isn't pressed. (Usually the next instruction is a jump to skip a code block)
 func SkipIfVXUnpressed(registerX uint16) { // EXA1
-
+	PC += 2
 }
 
 // Sets VX to the value of the delay timer.
@@ -456,27 +503,34 @@ func AddVXTOI(registerX uint16) { // FX1E
 
 // Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
 func SetIToSpriteAddrInVX(registerX uint16) { // FX29
-
+	RegisterI = Registers[registerX] * 5
+	PC += 2
 }
 
 // Stores the binary-coded decimal representation of VX, with the most significant of three digits at the address in I, the middle digit at I plus 1, and the least significant digit at I plus 2.
 // (In other words, take the decimal representation of VX, place the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.)
 func SetBCD(registerX uint16) { // FX33
+	val := Registers[registerX]
 
+	Memory[RegisterI] = byte(val / 100 % 10)
+	Memory[RegisterI+1] = byte(val / 10 % 10)
+	Memory[RegisterI+2] = byte(val % 10)
+
+	PC += 2
 }
 
 // Stores V0 to VX (including VX) in memory starting at address I.
 func RegDump(registerX uint16) { // FX55
-	for i := uint16(0); i <= registerX; i += 2 {
-		register := Registers[i/2]
-		Memory[RegisterI+i] = byte(register & 0xff00 >> 8)
-		Memory[RegisterI+i+1] = byte(register & 0x00ff)
+	for i := uint16(0); i <= registerX; i++ {
+		Memory[RegisterI+i] = byte(Registers[i])
 	}
+	PC += 2
 }
 
 // Fills V0 to VX (including VX) with values from memory starting at address I.
 func RegLoad(registerX uint16) { // FX65
-	for i := uint16(0); i <= registerX; i += 2 {
-		Registers[i/2] = uint16(Registers[RegisterI+i]&0xff00<<8) | uint16(Registers[RegisterI+i]&0x00ff)
+	for i := uint16(0); i <= registerX; i++ {
+		Registers[i] = uint16(Memory[RegisterI+i])
 	}
+	PC += 2
 }
