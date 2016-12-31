@@ -49,6 +49,12 @@ var (
 		0xe0, 0x90, 0x90, 0x90, 0xe0, // D
 		0xf0, 0x80, 0xf0, 0x80, 0xf0, // E
 		0xf0, 0x80, 0xf0, 0x80, 0x80} // F
+	KeyPositions = [16]uint8{
+		sdl.K_0, sdl.K_1, sdl.K_2, sdl.K_3,
+		sdl.K_4, sdl.K_5, sdl.K_6, sdl.K_7,
+		sdl.K_8, sdl.K_9, sdl.K_a, sdl.K_b,
+		sdl.K_c, sdl.K_d, sdl.K_e, sdl.K_f,
+	}
 )
 
 func main() {
@@ -88,6 +94,8 @@ func Run() {
 	PC = PROGRAM_POS
 
 	for {
+		sdl.PumpEvents()
+
 		opcode := (uint16(Memory[PC]) << 8) | uint16(Memory[PC+1])
 		RunOpcode(opcode)
 		if GfxFlag {
@@ -95,7 +103,8 @@ func Run() {
 			Window.UpdateSurface()
 			GfxFlag = false
 		}
-		sdl.Delay(300)
+		UpdateTimers()
+		sdl.Delay(160)
 	}
 }
 
@@ -132,12 +141,26 @@ func LoadSprites() {
 	}
 }
 
+func ListenKeys() {
+	for {
+		event := sdl.PollEvent()
+		switch t := event.(type) {
+		case *sdl.KeyDownEvent:
+			fmt.Println("Key down:", t.Keysym.Sym)
+		case *sdl.KeyUpEvent:
+			fmt.Println("Key up!")
+		}
+	}
+}
+
 func UpdateTimers() {
 	if DelayTimer > 0 {
+		fmt.Println("Delay:", DelayTimer)
 		DelayTimer--
 	}
 
 	if SoundTimer > 0 {
+		fmt.Println("Sound:", SoundTimer)
 		SoundTimer--
 	}
 }
@@ -161,13 +184,13 @@ func LoadROM() {
 		Memory[i+PROGRAM_POS] = data[i]
 		Memory[i+1+PROGRAM_POS] = data[i+1]
 
-		fmt.Printf("%x ", opcode)
+		fmt.Printf("%02x ", opcode)
 	}
 	fmt.Printf("\n\n")
 }
 
 func RunOpcode(opcode uint16) {
-	fmt.Printf("Opcode: %x\n\n", opcode)
+	fmt.Printf("Opcode: %02x\n\n", opcode)
 	switch opcode & 0xf000 {
 	case 0x0000:
 		switch opcode {
@@ -196,12 +219,14 @@ func RunOpcode(opcode uint16) {
 		registerX := opcode & 0x0f00 >> 8
 		registerY := opcode & 0x00f0 >> 4
 		switch opcode & 0x0001 {
-		case 0x0001:
+		case 0x0000:
 			SetVXToY(registerX, registerY)
-		case 0x0002:
+		case 0x0001:
 			SetVXToXorY(registerX, registerY)
-		case 0x0003:
+		case 0x0002:
 			SetVXToXandY(registerX, registerY)
+		case 0x0003:
+			SetVXToXxorY(registerX, registerY)
 		case 0x0004:
 			AddVYToVX(registerX, registerY)
 		case 0x0005:
@@ -226,9 +251,9 @@ func RunOpcode(opcode uint16) {
 	case 0xe000:
 		registerX := opcode & 0x0f00 >> 8
 		switch opcode & 0x00ff {
-		case 0x0007:
+		case 0x009e:
 			SkipIfVXPressed(registerX)
-		case 0x000a:
+		case 0x00a1:
 			SkipIfVXUnpressed(registerX)
 		}
 	case 0xf000:
@@ -267,7 +292,6 @@ func CallRcaProgram(addr uint16) { // 0NNN
 }
 
 // Clears the screen.
-
 func DisplayClear() { // 00E0
 	ClearScreen()
 }
@@ -356,27 +380,25 @@ func SetVXToXxorY(registerX, registerY uint16) { // 8XY3
 
 // Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.
 func AddVYToVX(registerX, registerY uint16) { // 8XY4
-	Registers[registerX] += Registers[registerY]
+	add := Registers[registerX] + Registers[registerY]
 
-	if Registers[registerX] > 255 {
-		Registers[0xf] = 1
-		Registers[registerX] &= 0x00ff
-	} else {
-		Registers[0xf] = 0
-	}
+	Registers[registerX] = add & 0xff
+	Registers[0xf] = (add >> 8) & 0xf
 
 	PC += 2
 }
 
 // VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
 func SubstractVYFromVX(registerX, registerY uint16) { //8XY5
-	if Registers[registerX] < Registers[registerY] {
-		Registers[registerX] = Registers[registerY] - Registers[registerX]
-		Registers[0xf] = 1
+	sub := Registers[registerY] - Registers[registerY]
+
+	if sub < 0 {
+		sub = 0
+		Registers[0xF] = 0
 	} else {
-		Registers[registerX] = Registers[registerX] - Registers[registerY]
-		Registers[0xf] = 0
+		Registers[0xF] = 1
 	}
+	Registers[registerX] = sub
 
 	PC += 2
 }
@@ -464,12 +486,24 @@ func Draw(vx, vy, height uint16) { // DXYN
 
 // Skips the next instruction if the key stored in VX is pressed. (Usually the next instruction is a jump to skip a code block)
 func SkipIfVXPressed(registerX uint16) { // EX9N
-	PC += 2
+	i := Registers[registerX]
+
+	if sdl.GetKeyboardState()[KeyPositions[i]] == 1 {
+		PC += 4
+	} else {
+		PC += 2
+	}
 }
 
 // Skips the next instruction if the key stored in VX isn't pressed. (Usually the next instruction is a jump to skip a code block)
 func SkipIfVXUnpressed(registerX uint16) { // EXA1
-	PC += 2
+	i := Registers[registerX]
+
+	if sdl.GetKeyboardState()[KeyPositions[i]] == 0 {
+		PC += 4
+	} else {
+		PC += 2
+	}
 }
 
 // Sets VX to the value of the delay timer.
@@ -480,12 +514,13 @@ func SetVXToDelayTimer(registerX uint16) { // FX07
 
 // A key press is awaited, and then stored in VX. (Blocking Operation. All instruction halted until next key event)
 func WaitAndSetKeypressToVX(registerX uint16) { // FX0A
-
+	log.Fatal("Lol oops")
 }
 
 // Sets the delay timer to VX.
 func SetDelayTimerToVX(registerX uint16) { // FX15
 	DelayTimer = byte(Registers[registerX])
+	fmt.Println(DelayTimer)
 	PC += 2
 }
 
