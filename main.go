@@ -21,8 +21,8 @@ const (
 var (
 	Surface    *sdl.Surface
 	Window     *sdl.Window
-	Registers  [16]uint16
-	RegisterI  uint16
+	V          [16]uint16
+	VI         uint16
 	PC         uint16
 	SP         byte
 	Stack      [16]uint16
@@ -210,27 +210,27 @@ func RunOpcode(opcode uint16) {
 	case 0x7000:
 		AddVX(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0x8000:
-		registerX := opcode & 0x0f00 >> 8
-		registerY := opcode & 0x00f0 >> 4
+		vx := opcode & 0x0f00 >> 8
+		vy := opcode & 0x00f0 >> 4
 		switch opcode & 0x0001 {
 		case 0x0000:
-			SetVXToY(registerX, registerY)
+			SetVXToY(vx, vy)
 		case 0x0001:
-			SetVXToXorY(registerX, registerY)
+			SetVXToXorY(vx, vy)
 		case 0x0002:
-			SetVXToXandY(registerX, registerY)
+			SetVXToXandY(vx, vy)
 		case 0x0003:
-			SetVXToXxorY(registerX, registerY)
+			SetVXToXxorY(vx, vy)
 		case 0x0004:
-			AddVYToVX(registerX, registerY)
+			AddVYToVX(vx, vy)
 		case 0x0005:
-			SubstractVYFromVX(registerX, registerY)
+			SubstractVYFromVX(vx, vy)
 		case 0x0006:
-			ShiftRightVX(registerX)
+			ShiftRightVX(vx)
 		case 0x0007:
-			SetVXToVYMinusVX(registerX, registerY)
+			SetVXToVYMinusVX(vx, vy)
 		case 0x000e:
-			ShiftLeftVX(registerX)
+			ShiftLeftVX(vx)
 		}
 	case 0x9000:
 		SkipIfVXNotEqualVY(opcode&0x0f00>>8, opcode&0x00f0>>4)
@@ -243,34 +243,34 @@ func RunOpcode(opcode uint16) {
 	case 0xd000:
 		Draw(opcode&0x0f00>>8, opcode&0x00f0>>4, opcode&0x000f)
 	case 0xe000:
-		registerX := opcode & 0x0f00 >> 8
+		vx := opcode & 0x0f00 >> 8
 		switch opcode & 0x00ff {
 		case 0x009e:
-			SkipIfVXPressed(registerX)
+			SkipIfVXPressed(vx)
 		case 0x00a1:
-			SkipIfVXUnpressed(registerX)
+			SkipIfVXUnpressed(vx)
 		}
 	case 0xf000:
-		registerX := opcode & 0x0f00 >> 8
+		vx := opcode & 0x0f00 >> 8
 		switch opcode & 0x00ff {
 		case 0x0007:
-			SetVXToDelayTimer(registerX)
+			SetVXToDelayTimer(vx)
 		case 0x000a:
-			WaitAndSetKeypressToVX(registerX)
+			WaitAndSetKeypressToVX(vx)
 		case 0x0015:
-			SetDelayTimerToVX(registerX)
+			SetDelayTimerToVX(vx)
 		case 0x0018:
-			SetSoundTimerToVX(registerX)
+			SetSoundTimerToVX(vx)
 		case 0x001E:
-			AddVXTOI(registerX)
+			AddVXTOI(vx)
 		case 0x0029:
-			SetIToSpriteAddrInVX(registerX)
+			SetIToSpriteAddrInVX(vx)
 		case 0x0033:
-			SetBCD(registerX)
+			SetBCD(vx)
 		case 0x0055:
-			RegDump(registerX)
+			RegDump(vx)
 		case 0x0065:
-			RegLoad(registerX)
+			RegLoad(vx)
 		}
 	}
 }
@@ -310,8 +310,8 @@ func CallSubroutine(addr uint16) { // 2NNN
 }
 
 // Skips the next instruction if VX equals NN. (Usually the next instruction is a jump to skip a code block)
-func SkipIfEqual(registerX, value uint16) { //3XNN
-	if Registers[registerX] == value {
+func SkipIfEqual(vx, value uint16) { //3XNN
+	if V[vx] == value {
 		PC += 4
 	} else {
 		PC += 2
@@ -319,8 +319,8 @@ func SkipIfEqual(registerX, value uint16) { //3XNN
 }
 
 // Skips the next instruction if VX doesn't equal NN. (Usually the next instruction is a jump to skip a code block)
-func SkipIfNotEqual(registerX, value uint16) { // 4XNN
-	if Registers[registerX] != value {
+func SkipIfNotEqual(vx, value uint16) { // 4XNN
+	if V[vx] != value {
 		PC += 4
 	} else {
 		PC += 2
@@ -328,8 +328,8 @@ func SkipIfNotEqual(registerX, value uint16) { // 4XNN
 }
 
 // Skips the next instruction if VX equals VY. (Usually the next instruction is a jump to skip a code block)
-func SkipIfVXEqualV(registerX, registerY uint16) { // 5XNN
-	if Registers[registerX] == Registers[registerY] {
+func SkipIfVXEqualV(vx, vy uint16) { // 5XNN
+	if V[vx] == V[vy] {
 		PC += 4
 	} else {
 		PC += 2
@@ -337,92 +337,92 @@ func SkipIfVXEqualV(registerX, registerY uint16) { // 5XNN
 }
 
 // Sets VX to NN.
-func SetVX(registerX, value uint16) { // 6XNN
-	Registers[registerX] = value
+func SetVX(vx, value uint16) { // 6XNN
+	V[vx] = value
 	PC += 2
 }
 
 // Adds NN to VX.
-func AddVX(registerX, value uint16) { // 7XNN
-	Registers[registerX] += value
+func AddVX(vx, value uint16) { // 7XNN
+	V[vx] += value
 	PC += 2
 }
 
 // Sets VX to the value of VY.
-func SetVXToY(registerX, registerY uint16) { // 8XY0
-	Registers[registerX] = Registers[registerY]
+func SetVXToY(vx, vy uint16) { // 8XY0
+	V[vx] = V[vy]
 	PC += 2
 }
 
 // Sets VX to VX or VY. (Bitwise OR operation)
-func SetVXToXorY(registerX, registerY uint16) { // 8XY1
-	Registers[registerX] |= Registers[registerY]
+func SetVXToXorY(vx, vy uint16) { // 8XY1
+	V[vx] |= V[vy]
 	PC += 2
 }
 
 // Sets VX to VX and VY. (Bitwise AND operation)
-func SetVXToXandY(registerX, registerY uint16) { // 8XY2
-	Registers[registerX] &= Registers[registerY]
+func SetVXToXandY(vx, vy uint16) { // 8XY2
+	V[vx] &= V[vy]
 	PC += 2
 }
 
 // Sets VX to VX xor VY.
-func SetVXToXxorY(registerX, registerY uint16) { // 8XY3
-	Registers[registerX] ^= Registers[registerY]
+func SetVXToXxorY(vx, vy uint16) { // 8XY3
+	V[vx] ^= V[vy]
 	PC += 2
 }
 
 // Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.
-func AddVYToVX(registerX, registerY uint16) { // 8XY4
-	add := Registers[registerX] + Registers[registerY]
+func AddVYToVX(vx, vy uint16) { // 8XY4
+	add := V[vx] + V[vy]
 
-	Registers[registerX] = add & 0xff
-	Registers[0xf] = (add >> 8) & 0xf
+	V[vx] = add & 0xff
+	V[0xf] = (add >> 8) & 0xf
 
 	PC += 2
 }
 
 // VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
-func SubstractVYFromVX(registerX, registerY uint16) { //8XY5
-	sub := Registers[registerY] - Registers[registerY]
+func SubstractVYFromVX(vx, vy uint16) { //8XY5
+	sub := V[vy] - V[vy]
 
 	if sub < 0 {
 		sub = 0
-		Registers[0xF] = 0
+		V[0xF] = 0
 	} else {
-		Registers[0xF] = 1
+		V[0xF] = 1
 	}
-	Registers[registerX] = sub
+	V[vx] = sub
 
 	PC += 2
 }
 
 // Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift.[2]
-func ShiftRightVX(registerX uint16) { // 8XY6
-	if Registers[registerX]&0x000f == 0x0001 {
-		Registers[0xf] = 1
+func ShiftRightVX(vx uint16) { // 8XY6
+	if V[vx]&0x000f == 0x0001 {
+		V[0xf] = 1
 	} else {
-		Registers[0xf] = 0
+		V[0xf] = 0
 	}
-	Registers[registerX] /= 2
+	V[vx] /= 2
 	PC += 2
 }
 
 // Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
-func SetVXToVYMinusVX(registerX, registerY uint16) { // 8XY7
-	Registers[registerX] = Registers[registerY] - Registers[registerY]
+func SetVXToVYMinusVX(vx, vy uint16) { // 8XY7
+	V[vx] = V[vy] - V[vy]
 	PC += 2
 }
 
 // Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift.[2]
-func ShiftLeftVX(registerX uint16) { // 8XYE
-	Registers[registerX] = Registers[registerX] << 1
+func ShiftLeftVX(vx uint16) { // 8XYE
+	V[vx] = V[vx] << 1
 	PC += 2
 }
 
 // Skips the next instruction if VX doesn't equal VY. (Usually the next instruction is a jump to skip a code block)
-func SkipIfVXNotEqualVY(registerX, registerY uint16) { // 9XY0
-	if Registers[registerX] != Registers[registerY] {
+func SkipIfVXNotEqualVY(vx, vy uint16) { // 9XY0
+	if V[vx] != V[vy] {
 		PC += 4
 	} else {
 		PC += 2
@@ -431,18 +431,18 @@ func SkipIfVXNotEqualVY(registerX, registerY uint16) { // 9XY0
 
 // Sets I to the address NNN.
 func SetIToAddr(addr uint16) { // ANNN
-	RegisterI = addr
+	VI = addr
 	PC += 2
 }
 
 // Jumps to the address NNN plus V0.
 func JumpToAddrPlusV0(addr uint16) { // BNNN
-	PC = addr + Registers[0]
+	PC = addr + V[0]
 }
 
 // Sets VX to the result of a bitwise and operation on a random number (Typically: 0 to 255) and NN
-func SetVXRandomAndVal(registerX, value uint16) { // CXNN
-	Registers[registerX] = uint16(rand.Int()%255) & value
+func SetVXRandomAndVal(vx, value uint16) { // CXNN
+	V[vx] = uint16(rand.Int()%255) & value
 	PC += 2
 }
 
@@ -452,12 +452,12 @@ func SetVXRandomAndVal(registerX, value uint16) { // CXNN
 func Draw(vx, vy, height uint16) { // DXYN
 	var pixel byte
 
-	x := Registers[vx]
-	y := Registers[vy]
+	x := V[vx]
+	y := V[vy]
 
-	Registers[0xf] = 0
+	V[0xf] = 0
 	for yline := uint16(0); yline < height && yline+y < SCREEN_HEIGHT; yline++ {
-		pixel = Memory[RegisterI+yline]
+		pixel = Memory[VI+yline]
 
 		for xline := uint16(0); xline < 8; xline++ {
 			if pixel&(0x80>>xline) != 0 {
@@ -467,7 +467,7 @@ func Draw(vx, vy, height uint16) { // DXYN
 					// VF is set to 1 if any screen pixels are flipped from
 					// set to unset when the sprite is drawn, and to 0 if
 					// that doesn't happen.
-					Registers[0xF] = 1
+					V[0xF] = 1
 				}
 				GFX[offset] ^= 1
 			}
@@ -479,8 +479,8 @@ func Draw(vx, vy, height uint16) { // DXYN
 }
 
 // Skips the next instruction if the key stored in VX is pressed. (Usually the next instruction is a jump to skip a code block)
-func SkipIfVXPressed(registerX uint16) { // EX9N
-	i := Registers[registerX]
+func SkipIfVXPressed(vx uint16) { // EX9N
+	i := V[vx]
 
 	if sdl.GetKeyboardState()[KeyPositions[i]] == 1 {
 		PC += 4
@@ -490,8 +490,8 @@ func SkipIfVXPressed(registerX uint16) { // EX9N
 }
 
 // Skips the next instruction if the key stored in VX isn't pressed. (Usually the next instruction is a jump to skip a code block)
-func SkipIfVXUnpressed(registerX uint16) { // EXA1
-	i := Registers[registerX]
+func SkipIfVXUnpressed(vx uint16) { // EXA1
+	i := V[vx]
 
 	if sdl.GetKeyboardState()[KeyPositions[i]] == 0 {
 		PC += 4
@@ -501,13 +501,13 @@ func SkipIfVXUnpressed(registerX uint16) { // EXA1
 }
 
 // Sets VX to the value of the delay timer.
-func SetVXToDelayTimer(registerX uint16) { // FX07
-	Registers[registerX] = uint16(DelayTimer)
+func SetVXToDelayTimer(vx uint16) { // FX07
+	V[vx] = uint16(DelayTimer)
 	PC += 2
 }
 
 // A key press is awaited, and then stored in VX. (Blocking Operation. All instruction halted until next key event)
-func WaitAndSetKeypressToVX(registerX uint16) { // FX0A
+func WaitAndSetKeypressToVX(vx uint16) { // FX0A
 	for {
 		event := sdl.WaitEvent()
 		switch t := event.(type) {
@@ -517,7 +517,7 @@ func WaitAndSetKeypressToVX(registerX uint16) { // FX0A
 			fmt.Println("Key down:", key, "Chippy: ", chipKey)
 
 			if chipKey >= 0 {
-				Registers[registerX] = uint16(chipKey)
+				V[vx] = uint16(chipKey)
 				PC += 2
 				return
 			}
@@ -526,54 +526,54 @@ func WaitAndSetKeypressToVX(registerX uint16) { // FX0A
 }
 
 // Sets the delay timer to VX.
-func SetDelayTimerToVX(registerX uint16) { // FX15
-	DelayTimer = byte(Registers[registerX])
+func SetDelayTimerToVX(vx uint16) { // FX15
+	DelayTimer = byte(V[vx])
 	fmt.Println(DelayTimer)
 	PC += 2
 }
 
 // Sets the sound timer to VX.
-func SetSoundTimerToVX(registerX uint16) { // FX18
-	SoundTimer = byte(Registers[registerX])
+func SetSoundTimerToVX(vx uint16) { // FX18
+	SoundTimer = byte(V[vx])
 	PC += 2
 }
 
 // Adds VX to I.
-func AddVXTOI(registerX uint16) { // FX1E
-	RegisterI += Registers[registerX]
+func AddVXTOI(vx uint16) { // FX1E
+	VI += V[vx]
 	PC += 2
 }
 
 // Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
-func SetIToSpriteAddrInVX(registerX uint16) { // FX29
-	RegisterI = Registers[registerX] * 5
+func SetIToSpriteAddrInVX(vx uint16) { // FX29
+	VI = V[vx] * 5
 	PC += 2
 }
 
 // Stores the binary-coded decimal representation of VX, with the most significant of three digits at the address in I, the middle digit at I plus 1, and the least significant digit at I plus 2.
 // (In other words, take the decimal representation of VX, place the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.)
-func SetBCD(registerX uint16) { // FX33
-	val := Registers[registerX]
+func SetBCD(vx uint16) { // FX33
+	val := V[vx]
 
-	Memory[RegisterI] = byte(val / 100 % 10)
-	Memory[RegisterI+1] = byte(val / 10 % 10)
-	Memory[RegisterI+2] = byte(val % 10)
+	Memory[VI] = byte(val / 100 % 10)
+	Memory[VI+1] = byte(val / 10 % 10)
+	Memory[VI+2] = byte(val % 10)
 
 	PC += 2
 }
 
 // Stores V0 to VX (including VX) in memory starting at address I.
-func RegDump(registerX uint16) { // FX55
-	for i := uint16(0); i <= registerX; i++ {
-		Memory[RegisterI+i] = byte(Registers[i])
+func RegDump(vx uint16) { // FX55
+	for i := uint16(0); i <= vx; i++ {
+		Memory[VI+i] = byte(V[i])
 	}
 	PC += 2
 }
 
 // Fills V0 to VX (including VX) with values from memory starting at address I.
-func RegLoad(registerX uint16) { // FX65
-	for i := uint16(0); i <= registerX; i++ {
-		Registers[i] = uint16(Memory[RegisterI+i])
+func RegLoad(vx uint16) { // FX65
+	for i := uint16(0); i <= vx; i++ {
+		V[i] = uint16(Memory[VI+i])
 	}
 	PC += 2
 }
