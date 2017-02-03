@@ -104,17 +104,17 @@ func Run() {
 			GfxFlag = false
 		}
 		UpdateTimers()
-		sdl.Delay(160)
+		sdl.Delay(17)
 	}
 }
 
 func ClearScreen() {
-	rect := sdl.Rect{0, 0, int32(DISPLAY_WIDTH), int32(DISPLAY_HEIGHT)}
 	// Clear GFX values
 	for i := range GFX {
 		GFX[i] = 0
 	}
-	Surface.FillRect(&rect, 0)
+	DrawScreen()
+	PC += 2
 }
 
 func DrawScreen() {
@@ -126,10 +126,13 @@ func DrawScreen() {
 			position := y*SCREEN_WIDTH + x
 			pixel := GFX[position]
 
+			rect := sdl.Rect{int32(x) * pixelWidth, int32(y) * pixelHeight, pixelWidth, pixelHeight}
+
 			if pixel == 1 {
 				// fmt.Printf("x:%d\ny:%d\n\n", x, y)
-				rect := sdl.Rect{int32(x) * pixelWidth, int32(y) * pixelHeight, pixelWidth, pixelHeight}
 				Surface.FillRect(&rect, 0xffffffff)
+			} else {
+				Surface.FillRect(&rect, 0)
 			}
 		}
 	}
@@ -142,15 +145,6 @@ func LoadSprites() {
 }
 
 func ListenKeys() {
-	for {
-		event := sdl.PollEvent()
-		switch t := event.(type) {
-		case *sdl.KeyDownEvent:
-			fmt.Println("Key down:", t.Keysym.Sym)
-		case *sdl.KeyUpEvent:
-			fmt.Println("Key up!")
-		}
-	}
 }
 
 func UpdateTimers() {
@@ -514,7 +508,21 @@ func SetVXToDelayTimer(registerX uint16) { // FX07
 
 // A key press is awaited, and then stored in VX. (Blocking Operation. All instruction halted until next key event)
 func WaitAndSetKeypressToVX(registerX uint16) { // FX0A
-	log.Fatal("Lol oops")
+	for {
+		event := sdl.WaitEvent()
+		switch t := event.(type) {
+		case *sdl.KeyDownEvent:
+			key := t.Keysym.Sym
+			chipKey := GetChipKey(int(key))
+			fmt.Println("Key down:", key, "Chippy: ", chipKey)
+
+			if chipKey >= 0 {
+				Registers[registerX] = uint16(chipKey)
+				PC += 2
+				return
+			}
+		}
+	}
 }
 
 // Sets the delay timer to VX.
@@ -568,4 +576,13 @@ func RegLoad(registerX uint16) { // FX65
 		Registers[i] = uint16(Memory[RegisterI+i])
 	}
 	PC += 2
+}
+
+func GetChipKey(sdlKey int) int {
+	for i, key := range KeyPositions {
+		if sdlKey == int(key) {
+			return i
+		}
+	}
+	return -1
 }
