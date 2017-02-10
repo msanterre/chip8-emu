@@ -73,7 +73,7 @@ func main() {
 	// Initiate the drawing surface
 	sdl.Init(sdl.INIT_EVERYTHING)
 
-	Window, err = sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, DISPLAY_WIDTH, DISPLAY_HEIGHT, sdl.WINDOW_SHOWN)
+	Window, err = sdl.CreateWindow("Chip-8", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, DISPLAY_WIDTH, DISPLAY_HEIGHT, sdl.WINDOW_SHOWN)
 	if err != nil {
 		panic(err)
 	}
