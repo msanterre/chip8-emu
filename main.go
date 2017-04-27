@@ -144,9 +144,6 @@ func LoadSprites() {
 	}
 }
 
-func ListenKeys() {
-}
-
 func UpdateTimers() {
 	if DelayTimer > 0 {
 		fmt.Println("Delay:", DelayTimer)
