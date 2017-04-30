@@ -201,7 +201,7 @@ func RunOpcode(opcode uint16) {
 	case 0x4000:
 		SkipIfNotEqual(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0x5000:
-		SkipIfVXEqualV(opcode&0x0f00>>8, opcode&0x00f0>>4)
+		SkipIfVXEqualVY(opcode&0x0f00>>8, opcode&0x00f0>>4)
 	case 0x6000:
 		SetVX(opcode&0x0f00>>8, opcode&0x00ff)
 	case 0x7000:
@@ -209,7 +209,7 @@ func RunOpcode(opcode uint16) {
 	case 0x8000:
 		vx := opcode & 0x0f00 >> 8
 		vy := opcode & 0x00f0 >> 4
-		switch opcode & 0x0001 {
+		switch opcode & 0x000f {
 		case 0x0000:
 			SetVXToY(vx, vy)
 		case 0x0001:
@@ -259,7 +259,7 @@ func RunOpcode(opcode uint16) {
 		case 0x0018:
 			SetSoundTimerToVX(vx)
 		case 0x001E:
-			AddVXTOI(vx)
+			AddVXToI(vx)
 		case 0x0029:
 			SetIToSpriteAddrInVX(vx)
 		case 0x0033:
@@ -325,7 +325,7 @@ func SkipIfNotEqual(vx, value uint16) { // 4XNN
 }
 
 // Skips the next instruction if VX equals VY. (Usually the next instruction is a jump to skip a code block)
-func SkipIfVXEqualV(vx, vy uint16) { // 5XNN
+func SkipIfVXEqualVY(vx, vy uint16) { // 5XNN
 	if V[vx] == V[vy] {
 		PC += 4
 	} else {
@@ -353,19 +353,19 @@ func SetVXToY(vx, vy uint16) { // 8XY0
 
 // Sets VX to VX or VY. (Bitwise OR operation)
 func SetVXToXorY(vx, vy uint16) { // 8XY1
-	V[vx] |= V[vy]
+	V[vx] = V[vx] | V[vy]
 	PC += 2
 }
 
 // Sets VX to VX and VY. (Bitwise AND operation)
 func SetVXToXandY(vx, vy uint16) { // 8XY2
-	V[vx] &= V[vy]
+	V[vx] = V[vx] & V[vy]
 	PC += 2
 }
 
 // Sets VX to VX xor VY.
 func SetVXToXxorY(vx, vy uint16) { // 8XY3
-	V[vx] ^= V[vy]
+	V[vx] = V[vx] ^ V[vy]
 	PC += 2
 }
 
@@ -439,7 +439,7 @@ func JumpToAddrPlusV0(addr uint16) { // BNNN
 
 // Sets VX to the result of a bitwise and operation on a random number (Typically: 0 to 255) and NN
 func SetVXRandomAndVal(vx, value uint16) { // CXNN
-	V[vx] = uint16(rand.Int()%255) & value
+	V[vx] = uint16(rand.Int()) & value & 0xff
 	PC += 2
 }
 
@@ -536,7 +536,7 @@ func SetSoundTimerToVX(vx uint16) { // FX18
 }
 
 // Adds VX to I.
-func AddVXTOI(vx uint16) { // FX1E
+func AddVXToI(vx uint16) { // FX1E
 	VI += V[vx]
 	PC += 2
 }
@@ -548,7 +548,6 @@ func SetIToSpriteAddrInVX(vx uint16) { // FX29
 }
 
 // Stores the binary-coded decimal representation of VX, with the most significant of three digits at the address in I, the middle digit at I plus 1, and the least significant digit at I plus 2.
-// (In other words, take the decimal representation of VX, place the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.)
 func SetBCD(vx uint16) { // FX33
 	val := V[vx]
 
@@ -575,6 +574,9 @@ func RegLoad(vx uint16) { // FX65
 	PC += 2
 }
 
+///
+// Private
+///
 func GetChipKey(sdlKey int) int {
 	for i, key := range KeyPositions {
 		if sdlKey == int(key) {
