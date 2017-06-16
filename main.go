@@ -575,7 +575,7 @@ func RegLoad(vx uint16) { // FX65
 }
 
 ///
-// Private
+// Utility
 ///
 func GetChipKey(sdlKey int) int {
 	for i, key := range KeyPositions {
