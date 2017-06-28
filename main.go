@@ -380,7 +380,7 @@ func AddVYToVX(vx, vy uint16) { // 8XY4
 }
 
 // VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
-func SubstractVYFromVX(vx, vy uint16) { //8XY5
+func SubstractVYFromVX(vx, vy uint16) { // 8XY5
 	sub := V[vx] - V[vy]
 
 	if sub < 0 {
@@ -575,7 +575,7 @@ func RegLoad(vx uint16) { // FX65
 }
 
 ///
-// Private
+// Utility
 ///
 func GetChipKey(sdlKey int) int {
 	for i, key := range KeyPositions {
