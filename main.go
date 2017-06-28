@@ -104,7 +104,7 @@ func Run() {
 			GfxFlag = false
 		}
 		UpdateTimers()
-		sdl.Delay(17)
+		sdl.Delay(2)
 	}
 }
 
@@ -381,7 +381,7 @@ func AddVYToVX(vx, vy uint16) { // 8XY4
 
 // VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
 func SubstractVYFromVX(vx, vy uint16) { //8XY5
-	sub := V[vy] - V[vy]
+	sub := V[vx] - V[vy]
 
 	if sub < 0 {
 		sub = 0
