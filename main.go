@@ -14,8 +14,8 @@ const (
 	PROGRAM_POS    uint16 = 0x200
 	SCREEN_WIDTH   uint16 = 64
 	SCREEN_HEIGHT  uint16 = 32
-	DISPLAY_WIDTH  int    = 640
-	DISPLAY_HEIGHT int    = 320
+	DISPLAY_WIDTH  int32  = 640
+	DISPLAY_HEIGHT int32  = 320
 )
 
 var (
@@ -118,8 +118,8 @@ func ClearScreen() {
 }
 
 func DrawScreen() {
-	pixelWidth := int32(DISPLAY_WIDTH / int(SCREEN_WIDTH))
-	pixelHeight := int32(DISPLAY_HEIGHT / int(SCREEN_HEIGHT))
+	pixelWidth := int32(DISPLAY_WIDTH / int32(SCREEN_WIDTH))
+	pixelHeight := int32(DISPLAY_HEIGHT / int32(SCREEN_HEIGHT))
 
 	for y := uint16(0); y < SCREEN_HEIGHT; y++ {
 		for x := uint16(0); x < SCREEN_WIDTH; x++ {
@@ -508,7 +508,7 @@ func WaitAndSetKeypressToVX(vx uint16) { // FX0A
 	for {
 		event := sdl.WaitEvent()
 		switch t := event.(type) {
-		case *sdl.KeyDownEvent:
+		case *sdl.KeyboardEvent:
 			key := t.Keysym.Sym
 			chipKey := GetChipKey(int(key))
 			fmt.Println("Key down:", key, "Chippy: ", chipKey)
