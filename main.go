@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
@@ -58,7 +57,7 @@ var (
 )
 
 func main() {
-	var err error
+	fmt.Println("Chip-8 Emulator")
 
 	if len(os.Args) != 2 {
 		fmt.Println("Usage: chip8 <path_to_rom>")
@@ -70,24 +69,39 @@ func main() {
 	LoadSprites()
 	LoadROM()
 
-	// Initiate the drawing surface
+	if err := InitializeDrawingSurface(); err != nil {
+		fmt.Println("Could not initialize drawing surface.")
+		os.Exit(-1)
+	}
+	defer Close()
+
+	Run()
+}
+
+func InitializeDrawingSurface() error {
+	var err error
+
 	sdl.Init(sdl.INIT_EVERYTHING)
 
 	Window, err = sdl.CreateWindow("Chip-8", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, DISPLAY_WIDTH, DISPLAY_HEIGHT, sdl.WINDOW_SHOWN)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	defer Window.Destroy()
 
 	Surface, err = Window.GetSurface()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	ClearScreen()
 	Window.UpdateSurface()
 
-	Run()
+	return nil
+}
+
+func Close() {
+	Window.Destroy()
+	sdl.Quit()
 }
 
 func Run() {
@@ -139,9 +153,7 @@ func DrawScreen() {
 }
 
 func LoadSprites() {
-	for i := 0; i < len(Sprites); i++ {
-		Memory[i] = Sprites[i]
-	}
+	copy(Memory[:], Sprites[:])
 }
 
 func UpdateTimers() {
@@ -157,7 +169,7 @@ func UpdateTimers() {
 }
 
 func LoadROM() {
-	data, err := ioutil.ReadFile(os.Args[1])
+	data, err := os.ReadFile(os.Args[1])
 
 	if err != nil {
 		fmt.Println("Could not load ROM.")
@@ -381,7 +393,8 @@ func AddVYToVX(vx, vy uint16) { // 8XY4
 
 // VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
 func SubstractVYFromVX(vx, vy uint16) { // 8XY5
-	sub := V[vx] - V[vy]
+	var sub int32
+	sub = int32(V[vx]) - int32(V[vy])
 
 	if sub < 0 {
 		sub = 0
@@ -389,7 +402,7 @@ func SubstractVYFromVX(vx, vy uint16) { // 8XY5
 	} else {
 		V[0xF] = 1
 	}
-	V[vx] = sub
+	V[vx] = uint16(sub)
 
 	PC += 2
 }
@@ -407,7 +420,7 @@ func ShiftRightVX(vx uint16) { // 8XY6
 
 // Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
 func SetVXToVYMinusVX(vx, vy uint16) { // 8XY7
-	V[vx] = V[vy] - V[vy]
+	V[vx] = V[vy] - V[vx]
 	PC += 2
 }
 
@@ -574,9 +587,9 @@ func RegLoad(vx uint16) { // FX65
 	PC += 2
 }
 
-///
+// /
 // Utility
-///
+// /
 func GetChipKey(sdlKey int) int {
 	for i, key := range KeyPositions {
 		if sdlKey == int(key) {
